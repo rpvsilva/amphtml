@@ -25,15 +25,12 @@ import {FakeWindow} from '../../../../../testing/fake-dom';
 import {Services} from '../../../../../src/services';
 
 describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
-  let sandbox;
   let element;
   let script;
   let service;
   let xhr;
 
   beforeEach(() => {
-    sandbox = env.sandbox;
-
     element = document.createElement('amp-script');
     env.ampdoc.getBody().appendChild(element);
 
@@ -41,21 +38,21 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
     script.getAmpDoc = () => env.ampdoc;
 
     service = {
-      checkSha384: sandbox.stub(),
+      checkSha384: env.sandbox.stub(),
       sizeLimitExceeded: () => false,
     };
     script.setService(service);
 
     xhr = {
-      fetchText: sandbox.stub(),
+      fetchText: env.sandbox.stub(),
     };
     xhr.fetchText
-      .withArgs(sinon.match(/amp-script-worker-0.1.js/))
+      .withArgs(env.sandbox.match(/amp-script-worker-0.1.js/))
       .resolves({text: () => Promise.resolve('/* noop */')});
-    sandbox.stub(Services, 'xhrFor').returns(xhr);
+    env.sandbox.stub(Services, 'xhrFor').returns(xhr);
 
     // Make @ampproject/worker-dom dependency a no-op for these unit tests.
-    sandbox.stub(WorkerDOM, 'upgrade').resolves();
+    env.sandbox.stub(WorkerDOM, 'upgrade').resolves();
   });
 
   function stubFetch(url, headers, text, responseUrl) {
@@ -69,7 +66,7 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
   }
 
   it('should require JS content-type for same-origin src', () => {
-    sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
+    env.sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
     element.setAttribute('src', 'https://foo.example/foo.txt');
 
     stubFetch(
@@ -82,7 +79,7 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
   });
 
   it('should check sha384(author_js) for cross-origin src', async () => {
-    sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
+    env.sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
     element.setAttribute('src', 'https://bar.example/bar.js');
 
     stubFetch(
@@ -97,7 +94,7 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
   });
 
   it('should fail on invalid sha384(author_js) for cross-origin src', () => {
-    sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
+    env.sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
     element.setAttribute('src', 'https://bar.example/bar.js');
 
     stubFetch(
@@ -111,7 +108,7 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
   });
 
   it('should check response URL to handle redirects', () => {
-    sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
+    env.sandbox.stub(env.ampdoc, 'getUrl').returns('https://foo.example/');
     element.setAttribute('src', 'https://foo.example/foo.js');
 
     stubFetch(
@@ -160,13 +157,6 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
       expect(script.development_).false;
     });
 
-    it('development tag present should put it in dev mode', () => {
-      element.setAttribute('development', true);
-      script = new AmpScript(element);
-      script.buildCallback();
-      expect(script.development_).true;
-    });
-
     it('data-ampdevmode on just the element should not enable dev mode', () => {
       element.setAttribute('data-ampdevmode', true);
       script = new AmpScript(element);
@@ -210,14 +200,11 @@ describes.fakeWin('AmpScript', {amp: {runtimeOn: false}}, env => {
 
 describes.fakeWin('AmpScriptService', {amp: {runtimeOn: false}}, env => {
   let crypto;
-  let sandbox;
   let service;
 
   beforeEach(() => {
-    sandbox = env.sandbox;
-
-    crypto = {sha384Base64: sandbox.stub()};
-    sandbox.stub(Services, 'cryptoFor').returns(crypto);
+    crypto = {sha384Base64: env.sandbox.stub()};
+    env.sandbox.stub(Services, 'cryptoFor').returns(crypto);
   });
 
   function createMetaTag(name, content) {
@@ -254,13 +241,25 @@ describes.fakeWin('AmpScriptService', {amp: {runtimeOn: false}}, env => {
 
 describe('SanitizerImpl', () => {
   let el;
-  let s;
   let win;
+  let s;
+  let getSanitizer;
 
   beforeEach(() => {
     win = new FakeWindow();
-    s = new SanitizerImpl(win, /* element */ null, []);
     el = win.document.createElement('div');
+
+    getSanitizer = ({byUserGesture, byFixedSize}) =>
+      new SanitizerImpl(
+        {
+          win,
+          element: el,
+          isMutationAllowedByFixedSize: () => byFixedSize,
+          isMutationAllowedByUserGesture: () => byUserGesture,
+        },
+        []
+      );
+    s = getSanitizer({byUserGesture: false, byFixedSize: false});
   });
 
   describe('setAttribute', () => {
@@ -324,7 +323,15 @@ describe('SanitizerImpl', () => {
     });
 
     it('should allow changes to form elements if sandbox=allow-forms', () => {
-      s = new SanitizerImpl(win, /* element */ null, ['allow-forms']);
+      s = new SanitizerImpl(
+        {
+          win,
+          element: null,
+          isMutationAllowedByUserGesture: () => {},
+          isMutationAllowedbyFixedSize: () => {},
+        },
+        ['allow-forms']
+      );
 
       const form = win.document.createElement('form');
       s.setAttribute(form, 'action-xhr', 'https://example.com/post');
@@ -436,14 +443,15 @@ describe('SanitizerImpl', () => {
 
     beforeEach(() => {
       bind = {
-        getStateValue: () => {},
-        setState: () => {},
+        getStateValue: window.sandbox.stub(),
+        setState: window.sandbox.stub(),
+        constrain: window.sandbox.stub(),
       };
-      sandbox.stub(Services, 'bindForDocOrNull').resolves(bind);
+      window.sandbox.stub(Services, 'bindForDocOrNull').resolves(bind);
     });
 
-    it('AMP.setState(json)', async () => {
-      sandbox.spy(bind, 'setState');
+    it('AMP.setState(json), without user interaction', async () => {
+      s = getSanitizer({byUserGesture: false, byFixedSize: false});
 
       await s.setStorage(
         StorageLocation.AMP_STATE,
@@ -452,12 +460,45 @@ describe('SanitizerImpl', () => {
       );
 
       expect(bind.setState).to.be.calledOnce;
-      expect(bind.setState).to.be.calledWithExactly({foo: 'bar'}, true, false);
+      expect(bind.setState).to.be.calledWithExactly(
+        {foo: 'bar'},
+        {skipEval: true, constrain: undefined, skipAmpState: false}
+      );
+    });
+
+    it('AMP.setState(json), with user interaction', async () => {
+      s = getSanitizer({byUserGesture: true, byFixedSize: false});
+
+      await s.setStorage(
+        StorageLocation.AMP_STATE,
+        /* key */ null,
+        '{"foo":"bar"}'
+      );
+
+      expect(bind.setState).to.be.calledOnce;
+      expect(bind.setState).to.be.calledWithExactly(
+        {foo: 'bar'},
+        {skipEval: false, constrain: undefined, skipAmpState: false}
+      );
+    });
+
+    it('AMP.setState(json), fixed size and no user interaction', async () => {
+      s = getSanitizer({byGesture: false, byFixedSize: true});
+
+      await s.setStorage(
+        StorageLocation.AMP_STATE,
+        /* key */ null,
+        '{"foo":"bar"}'
+      );
+
+      expect(bind.setState).to.be.calledOnce;
+      expect(bind.setState).to.be.calledWithExactly(
+        {foo: 'bar'},
+        {skipEval: false, constrain: [s.element_], skipAmpState: false}
+      );
     });
 
     it('AMP.setState(not_json)', async () => {
-      sandbox.spy(bind, 'setState');
-
       await s.setStorage(
         StorageLocation.AMP_STATE,
         /* key */ null,
@@ -468,7 +509,7 @@ describe('SanitizerImpl', () => {
     });
 
     it('AMP.getState(string)', async () => {
-      sandbox.stub(bind, 'getStateValue').returns('bar');
+      bind.getStateValue.returns('bar');
 
       const state = await s.getStorage(StorageLocation.AMP_STATE, 'foo');
       expect(state).to.equal('bar');
@@ -478,7 +519,7 @@ describe('SanitizerImpl', () => {
     });
 
     it('AMP.getState()', async () => {
-      sandbox.stub(bind, 'getStateValue').returns({foo: 'bar'});
+      bind.getStateValue.returns({foo: 'bar'});
 
       const state = await s.getStorage(StorageLocation.AMP_STATE, '');
       expect(state).to.deep.equal({foo: 'bar'});

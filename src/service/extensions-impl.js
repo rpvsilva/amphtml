@@ -49,7 +49,7 @@ const LOAD_TIMEOUT = 16000;
  *
  * @typedef {{
  *   implementationClass:
- *       function(new:../base-element.BaseElement, !Element),
+ *       typeof ../base-element.BaseElement,
  *   css: (?string|undefined),
  * }}
  */
@@ -271,18 +271,18 @@ export class Extensions {
    */
   getExtensionScript_(extensionId, includeInserted = true) {
     // Always ignore <script> elements that have a mismatched RTV.
-    // We have to match against "src" because a few extensions, such as
-    // "amp-viewer-integration", do not have "custom-element" attribute.
     const modifier =
       ':not([i-amphtml-loaded-new-version])' +
       (includeInserted ? '' : ':not([i-amphtml-inserted])');
+    // We have to match against "src" because a few extensions, such as
+    // "amp-viewer-integration", do not have "custom-element" attribute.
     const matches = this.win.document.head./*OK*/ querySelectorAll(
       `script[src*="/${extensionId}-"]` + modifier
     );
-    const matcher = new RegExp(`${extensionId}-\\d`);
     for (let i = 0; i < matches.length; i++) {
       const match = matches[i];
-      if (matcher.test(match.src)) {
+      const urlParts = parseExtensionUrl(match.src);
+      if (urlParts.extensionId === extensionId) {
         return match;
       }
     }
@@ -294,7 +294,7 @@ export class Extensions {
    * class when the extension has been loaded. If necessary, adds the extension
    * script to the page.
    * @param {string} elementName
-   * @return {!Promise<function(new:../base-element.BaseElement, !Element)>}
+   * @return {!Promise<typeof ../base-element.BaseElement>}
    */
   loadElementClass(elementName) {
     return this.preloadExtension(elementName).then(extension => {
@@ -312,7 +312,7 @@ export class Extensions {
    * restricted method and it's allowed to be called only during the overall
    * extension registration.
    * @param {string} name
-   * @param {function(new:../base-element.BaseElement, !Element)} implementationClass
+   * @param {typeof ../base-element.BaseElement} implementationClass
    * @param {?string|undefined} css
    * @restricted
    */
@@ -328,7 +328,7 @@ export class Extensions {
    * Installs the specified element implementation in the ampdoc.
    * @param {!./ampdoc-impl.AmpDoc} ampdoc
    * @param {string} name
-   * @param {!Function} implementationClass
+   * @param {typeof ../base-element.BaseElement} implementationClass
    * @param {?string|undefined} css
    * @private
    */
@@ -351,7 +351,7 @@ export class Extensions {
   /**
    * @param {!Window} win
    * @param {string} name
-   * @param {!Function} implementationClass
+   * @param {typeof ../base-element.BaseElement} implementationClass
    * @private
    */
   registerElementInWindow_(win, name, implementationClass) {
@@ -571,6 +571,12 @@ export class Extensions {
     }
     scriptElement.setAttribute('data-script', extensionId);
     scriptElement.setAttribute('i-amphtml-inserted', '');
+
+    // Propagate nonce to all generated script tags.
+    const currentScript = this.win.document.head.querySelector('script[nonce]');
+    if (currentScript) {
+      scriptElement.setAttribute('nonce', currentScript.getAttribute('nonce'));
+    }
 
     // Allow error information to be collected
     // https://github.com/ampproject/amphtml/issues/7353

@@ -109,7 +109,8 @@ import {installFriendlyIframeEmbed} from '../src/friendly-iframe-embed';
 import {maybeTrackImpression} from '../src/impression';
 import {resetScheduledElementForTesting} from '../src/service/custom-element-registry';
 import {setStyles} from '../src/style';
-import fetchMock from 'fetch-mock';
+import fetchMock from 'fetch-mock/es5/client-bundle';
+import sinon from /*OK*/ 'sinon';
 
 /** Should have something in the name, otherwise nothing is shown. */
 const SUB = ' ';
@@ -794,7 +795,7 @@ class AmpFixture {
     /**
      * Creates a custom element without registration.
      * @param {string=} opt_name
-     * @param {function(new:./base-element.BaseElement, !Element)} opt_implementationClass
+     * @param {typeof ./base-element.BaseElement} opt_implementationClass
      * @return {!AmpElement}
      */
     env.createAmpElement = createAmpElement.bind(null, win);
@@ -925,7 +926,7 @@ function installAmpAdStylesPromise(win) {
  * Creates a custom element without registration.
  * @param {!Window} win
  * @param {string=} opt_name
- * @param {function(new:./base-element.BaseElement, !Element)} opt_implementationClass
+ * @param {typeof ./base-element.BaseElement} opt_implementationClass
  * @return {!AmpElement}
  */
 function createAmpElement(win, opt_name, opt_implementationClass) {

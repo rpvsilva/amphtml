@@ -16,6 +16,11 @@
 
 import * as dom from '../../../../src/dom';
 import * as service from '../../../../src/service';
+import {
+  Action,
+  UIType,
+  getStoreService,
+} from '../../../amp-story/1.0/amp-story-store-service';
 import {ButtonTextFitter} from '../story-ad-button-text-fitter';
 import {CommonSignals} from '../../../../src/common-signals';
 import {StoryAdAnalytics} from '../story-ad-analytics';
@@ -42,6 +47,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
   let doc;
   let storyAutoAdsEl;
   let storyAdPage;
+  let storeService;
 
   beforeEach(() => {
     win = env.win;
@@ -49,12 +55,14 @@ describes.realWin('story-ad-page', {amp: true}, env => {
     storyAutoAdsEl = doc.createElement('amp-story-auto-ads');
     doc.body.appendChild(storyAutoAdsEl);
     storyAutoAdsEl.getAmpDoc = () => env.ampdoc;
+    storeService = getStoreService(win);
     storyAdPage = new StoryAdPage(
       storyAutoAdsEl.getAmpDoc(),
       baseConfig,
       1, // index
       new StoryAdLocalization(win),
-      new ButtonTextFitter(env.ampdoc)
+      new ButtonTextFitter(env.ampdoc),
+      storeService
     );
   });
 
@@ -108,7 +116,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
 
   describe('#hasTimedOut', () => {
     it('should timeout after > 10 seconds', () => {
-      const clock = sandbox.useFakeTimers(1555555555555);
+      const clock = window.sandbox.useFakeTimers(1555555555555);
       storyAdPage.build();
       expect(storyAdPage.hasTimedOut()).to.be.false;
       clock.tick(10009); // 10 second timeout.
@@ -140,7 +148,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
 
   describe('#registerLoadCallback', () => {
     it('registers given functions and executes when loaded', async () => {
-      const someFunc = sandbox.spy();
+      const someFunc = window.sandbox.spy();
       const pageElement = storyAdPage.build();
       // Stub delegateVideoAutoplay.
       pageElement.getImpl = () => Promise.resolve(pageImplMock);
@@ -363,7 +371,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
         'https://googleads.g.doubleclick.net/pagead/images/mtad/ad_choices_blue.png'
       );
 
-      const openWindowDialogStub = sandbox.stub(dom, 'openWindowDialog');
+      const openWindowDialogStub = window.sandbox.stub(dom, 'openWindowDialog');
       attribution.click();
       expect(openWindowDialogStub).to.be.calledOnce;
       expect(openWindowDialogStub).to.be.calledWithExactly(
@@ -371,6 +379,32 @@ describes.realWin('story-ad-page', {amp: true}, env => {
         'https://www.google.com',
         '_blank'
       );
+    });
+
+    it('propagates fullbleed state to attribution icon', async () => {
+      storeService.dispatch(Action.TOGGLE_UI, UIType.DESKTOP_FULLBLEED);
+
+      const iframe = doc.createElement('iframe');
+      ampAdElement.appendChild(iframe);
+      iframe.contentDocument.write(`
+          <head>
+            <meta name="amp4ads-vars-cta-type" content="SHOP">
+            <meta name="amp4ads-vars-cta-url" content="https://www.example.com">
+            <meta name="amp4ads-vars-attribution-icon" content="https://googleads.g.doubleclick.net/pagead/images/mtad/ad_choices_blue.png">
+            <meta name="amp4ads-vars-attribution-url" content="https://www.google.com">
+          </head>
+          <body></body>`);
+      await ampAdElement.signals().signal(CommonSignals.INI_LOAD);
+      await storyAdPage.maybeCreateCta();
+
+      const attribution = doc.querySelector('.i-amphtml-story-ad-attribution');
+      expect(attribution).to.have.class('i-amphtml-story-ad-fullbleed');
+
+      storeService.dispatch(Action.TOGGLE_UI, UIType.MOBILE);
+      expect(attribution).not.to.have.class('i-amphtml-story-ad-fullbleed');
+
+      storeService.dispatch(Action.TOGGLE_UI, UIType.DESKTOP_FULLBLEED);
+      expect(attribution).to.have.class('i-amphtml-story-ad-fullbleed');
     });
 
     it('does not create attribution when missing icon', async () => {
@@ -421,8 +455,10 @@ describes.realWin('story-ad-page', {amp: true}, env => {
 
     beforeEach(() => {
       const storyAnalytics = new StoryAdAnalytics(env.ampdoc);
-      fireEventStub = sandbox.stub(storyAnalytics, 'fireEvent');
-      sandbox.stub(service, 'getServicePromiseForDoc').resolves(storyAnalytics);
+      fireEventStub = window.sandbox.stub(storyAnalytics, 'fireEvent');
+      window.sandbox
+        .stub(service, 'getServicePromiseForDoc')
+        .resolves(storyAnalytics);
       storyAdPage = new StoryAdPage(
         storyAutoAdsEl.getAmpDoc(),
         baseConfig,
@@ -439,7 +475,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
         pageElement,
         1, // adIndex
         'story-ad-request',
-        {requestTime: sinon.match.number}
+        {requestTime: window.sandbox.match.number}
       );
     });
 
@@ -456,7 +492,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
         pageElement,
         1, // adIndex
         'story-ad-load',
-        {loadTime: sinon.match.number}
+        {loadTime: window.sandbox.match.number}
       );
     });
 
@@ -482,7 +518,7 @@ describes.realWin('story-ad-page', {amp: true}, env => {
         pageElement,
         1, // adIndex
         'story-ad-click',
-        {clickTime: sinon.match.number}
+        {clickTime: window.sandbox.match.number}
       );
     });
   });
